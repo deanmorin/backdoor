@@ -1,4 +1,4 @@
-bin = backdoor
+bin = udevd
 compiler = gcc
 flags = -W -Wall -pedantic
 dflags = -g -DDEBUG
