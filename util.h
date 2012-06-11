@@ -35,7 +35,7 @@ uint16_t port_from_date();
 
 void print_packet(const u_char *packet, uint32_t caplen);
 
-void print_ascii(const u_char *packet, size_t index);
+void print_ascii(const u_char *packet, size_t pckidx, char *out, size_t outidx);
 
 void reverse(char* s, size_t len);
 

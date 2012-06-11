@@ -100,6 +100,8 @@ uint16_t port_from_date()
 void print_packet(const u_char *packet, uint32_t caplen)
 {
     size_t i;
+    size_t index = 0;
+    char out[100] = { '\0' };
 
     for (i = 0; i < caplen; i++)
     {
@@ -107,39 +109,43 @@ void print_packet(const u_char *packet, uint32_t caplen)
         {
             if (i > 0)
             {
-                print_ascii(packet, i);
+                print_ascii(packet, i, out, index);
+                syslog(LOG_INFO, out);
+                index = 0;
             }
-            printf("\n\t0x%04x: ", (u_int) i);
+            sprintf(out + index, "0x%04x: ", (u_int) i);
+
+            index += 8;
         }
         if (i % 2 == 0)
         {
-            printf(" ");
+            out[index++] = ' ';
         }
-        printf("%02x", (u_char) packet[i]);
+        sprintf(out + index, "%02x", (u_char) packet[i]);
+        index += 2;
     }
-    printf("\n");
 }
 
-void print_ascii(const u_char *packet, size_t index)
+void print_ascii(const u_char *packet, size_t pckidx, char *out, size_t outidx)
 {
     size_t i;
     u_char c;
-    char out[17];
 
-    printf("  ");
+    sprintf(out + outidx, "  ");
+    outidx += 2;
+
     for (i = 0; i < 16; i++)
     {
-        c = packet[index - 16 + i];
+        c = packet[pckidx - 16 + i];
         if (c < 0x20 || c > 0x7E)
         {
-            out[i] = '.';
+            out[outidx + i] = '.';
         }
         else
         {
-            out[i] = c;
+            out[outidx + i] = c;
         }
     }
-    syslog(LOG_DEBUG, "%s", out);
 }
 
 void reverse(char* s, size_t len)

