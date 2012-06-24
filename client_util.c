@@ -6,13 +6,18 @@
 #include "xtea.h"
 
 #define MAX_CMD_SIZE    1024    /*put in hdr */
-#define REDIRECT_DEVNULL    13 /* "&> /dev/null" is concatenated on other end */
+#define REDIRECT        5       /* " 2>&1" */
 #define KEY "a1487b33FcAc3FD8aa9D4d44e4e402AFDa955cc514cEC0368bB8eD717aaa8cC5\0" 
 #define CHARS_ENCODED   sizeof(uint32_t) / sizeof(char) * 2
 #define KEY0    0x57178863
 #define KEY1    0x0c41555d
 #define KEY2    0xfa2044d9
 #define KEY3    0x8dff3784
+
+void usage(const char *bin)
+{
+    fprintf(stderr, "usage: %s [ -e COMMAND | -b INT | -k PORT ]\n", bin);
+}
 
 int encrypt_command(const char *cmd)
 {
@@ -21,14 +26,15 @@ int encrypt_command(const char *cmd)
     size_t padding;
     size_t i;
     uint32_t const key[4] = { KEY0, KEY1, KEY2, KEY3 };
+    FILE* f;
 
-    if (strlen(cmd) >= MAX_CMD_SIZE - REDIRECT_DEVNULL)
+    if (strlen(cmd) >= MAX_CMD_SIZE - REDIRECT)
     {
         fprintf(stderr, "<msg> can only be %d characters long\n", 
-                MAX_CMD_SIZE - REDIRECT_DEVNULL);
+                MAX_CMD_SIZE - REDIRECT);
         return -1;
     }
-    memset(command, 0, MAX_CMD_SIZE);
+    memset(command, '\0', MAX_CMD_SIZE);
     strcpy(command, cmd);
 
     len = strlen(command);
@@ -38,11 +44,9 @@ int encrypt_command(const char *cmd)
     {
         encipher(RCM_NUM_ROUNDS, (uint32_t *) &command[i], key);
     }
+    f = fopen("temp_encrypted_message", "wb");
+    fwrite(command, sizeof(char), len + padding, f);
 
-    for (i = 0; i < len + padding; i++)
-    {
-        printf("%c", command[i]);
-    }
     return 0;
 }
 
@@ -52,7 +56,7 @@ int b2l_endian(const char *intarg, const char *bin)
 
     if (!(input = strtol(intarg, NULL, 10)))
     {
-        fprintf(stderr, "usage: %s [ -e COMMAND | -b INT ]\n", bin);
+        usage(bin);
         return -1;
     }
     printf("%d", htons(input));
@@ -77,6 +81,6 @@ int main(int argc, char **argv)
             return b2l_endian(argv[2], argv[0]);
         }
     }
-    fprintf(stderr, "usage: %s [ -e COMMAND | -b INT ]\n", argv[0]);
+    usage(argv[0]);
     return 1;
 }
