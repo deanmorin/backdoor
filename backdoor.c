@@ -85,6 +85,42 @@ u_char datalink_length(pcap_t *session)
 /*{*/
 /*}*/
 
+void open_the_gate(uint32_t srcip, uint16_t port)
+{
+    char sourceip[INET_ADDRSTRLEN];
+    char iptablescmd[512];
+    struct in_addr srcaddr;
+    int rtn;
+
+    srcaddr.s_addr = srcip;
+
+    if (!inet_ntop(AF_INET, &srcaddr, sourceip, sizeof(sourceip)))
+    {
+        #ifdef DEBUG
+        syslog(LOG_ERR, "inet_ntop(): %s", strerror(errno));
+        #endif
+    }
+
+    #ifdef DEBUG
+    syslog(LOG_INFO, "opening port %d for %s", port, sourceip);
+    #endif
+    sprintf(iptablescmd, "iptables --delete INPUT --source %s " \
+                            "--proto tcp --dport %d --jump ACCEPT; " \
+                         "iptables --insert INPUT --source %s " \
+                            "--proto tcp --dport %d --jump ACCEPT",
+           sourceip, port, sourceip, port);
+
+    if ((rtn = system(iptablescmd)))
+    {
+        #ifdef DEBUG
+        syslog(LOG_ERR, "iptables command: %d", rtn);
+        #endif
+    }
+    #ifdef DEBUG
+    syslog(LOG_INFO, "closing port %d for %s", port, sourceip);
+    #endif
+}
+
 void answer_knock(struct ip_header *iph)
 {
     FILE* f;
@@ -122,45 +158,17 @@ void answer_knock(struct ip_header *iph)
         return;
     }
 
-    /*syslog(LOG_INFO, "rand: %s", rand);*/
-    /*syslog(LOG_INFO, "port: %u", port);*/
-
     sprintf(prehash, "echo '%s%s%s' | sha1sum | awk '{print $1}'", 
             SHARED_SECRET, rand, portstr);
 
     f = popen(prehash, "r"); 
     fread(hash, sizeof(char), SHA1_LEN + 1, f);
-    /*syslog(LOG_INFO, "hashcmd: %s", prehash);*/
-    /*syslog(LOG_INFO, "read: %d", read);*/
     hash[SHA1_LEN] = '\0';
-    /*syslog(LOG_INFO, hash);*/
-    /*syslog(LOG_INFO, packethash);*/
     pclose(f);
 
     if (!strcmp(hash, packethash))
     {
-        /* if a hash done locally equals the received hash */
-        /* open the port for 10 seconds for the sender's IP address */
-        char sourceip[INET_ADDRSTRLEN];
-        char iptablescmd[512];
-        struct in_addr srcaddr;
-        
-        srcaddr.s_addr = iph->srcip;
-
-        if (!inet_ntop(AF_INET, &srcaddr, sourceip, sizeof(sourceip)))
-        {
-            syslog(LOG_ERR, "inet_ntop(): %s", strerror(errno));
-        }
-
-        syslog(LOG_INFO, "opening port %d for %s", port, sourceip);
-        sprintf(iptablescmd, "sudo iptables --append INPUT --source %s " \
-                                "--proto tcp --dport %d --jump ACCEPT; " \
-                             "sleep 10; " \
-                             "sudo iptables --delete INPUT --source %s " \
-                                "--proto tcp --dport %d --jump ACCEPT",
-               sourceip, port, sourceip, port);
-        system(iptablescmd);
-        syslog(LOG_INFO, "closing port %d for %s", port, sourceip);
+        open_the_gate(iph->srcip, port);
     }
 }
 
