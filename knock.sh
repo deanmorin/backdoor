@@ -5,6 +5,11 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
+# fix tr issues on OSX
+if [ $(uname) == 'Darwin' ]; then
+    export $LC_ALL=C
+fi
+
 shared_secret="this will be used for the port knocking hash"
 random=$(cat /dev/urandom | tr -cd [:alnum:] | head -c 8)
 knock_port=25068
@@ -14,9 +19,10 @@ hashed=$(echo $prehash | sha1sum | awk '{print $1}')
 msg="$hashed$random$port_to_open"
 ./client_util -e $msg
 
-len=$(expr length $msg)
+len=${#msg}
 echo "Random: $random"
 echo "Hash: $hashed"
+echo "Length: $len"
 
 #tcpid=$(./client_util -b $cmdlen)
 #srcprt=$(./client_util)
