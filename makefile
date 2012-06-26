@@ -5,7 +5,7 @@ dflags = -g -DDEBUG
 lib = -lpcap
 cmp = $(compiler) $(flags) -c
 lnk = $(compiler) $(flags) $(lib) -o $(bin)
-obj = backdoor.o pkthdr.o xtea.o util.o
+obj = backdoor.o pkthdr.o xtea.o util.o client.o network.o
 
 ifeq (($os), Darwin)
 	flags += -j8
@@ -34,6 +34,12 @@ xtea.o : xtea.c xtea.h
 
 util.o : util.c util.h
 	$(cmp) util.c
+
+client.o : client.c clntsrvr.h network.h pkthdr.h
+	$(cmp) client.c
+
+network.o : network.c
+	$(cmp) network.c
 
 client_util.o : client_util.c util.h xtea.h
 	$(cmp) client_util.c

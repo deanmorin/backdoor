@@ -103,7 +103,7 @@ void print_packet(const u_char *packet, uint32_t caplen)
     size_t index = 0;
     char out[100] = { '\0' };
 
-    syslog(LOG_INFO, "");
+    syslog(LOG_INFO, " ");
 
     for (i = 0; i < caplen; i++)
     {
@@ -126,7 +126,7 @@ void print_packet(const u_char *packet, uint32_t caplen)
         sprintf(out + index, "%02x", (u_char) packet[i]);
         index += 2;
     }
-    syslog(LOG_INFO, "");
+    syslog(LOG_INFO, " ");
 }
 
 void print_ascii(const u_char *packet, size_t pckidx, char *out, size_t outidx)
