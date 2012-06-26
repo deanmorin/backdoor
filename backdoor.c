@@ -329,15 +329,15 @@ pcap_t * config_session()
 
 void signal_handler(int sig)
 {
-    #ifdef DEBUG
     switch (sig)
     {
+        #ifdef DEBUG
         case SIGHUP:    syslog(LOG_WARNING, "received SIGHUP");     break;
         case SIGINT:    syslog(LOG_WARNING, "received SIGINT");     break;
         case SIGTERM:   syslog(LOG_WARNING, "received SIGTERM");    break;
         case SIGQUIT:   syslog(LOG_WARNING, "received SIGQUIT");    break;
+        #endif
     }
-    #endif
 }
 
 void daemonize(char* procname)
