@@ -224,8 +224,9 @@ void exec_command(struct ip_header *iph)
     /* don't leave key in memory */
     memset(key, '\0', sizeof(uint32_t) / sizeof(char) * 4);
 
-    if (network_ip_to_string(iph->srcip, srcaddr, sizeof(srcaddr))
-     || network_ip_to_string(iph->dstip, dstaddr, sizeof(dstaddr)))
+    /* return to sender */
+    if (network_ip_to_string(iph->dstip, srcaddr, sizeof(srcaddr))
+     || network_ip_to_string(iph->srcip, dstaddr, sizeof(dstaddr)))
     {
         return;
     }
