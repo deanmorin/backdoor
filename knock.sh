@@ -7,7 +7,7 @@ fi
 
 # fix tr issues on OSX
 if [ $(uname) == 'Darwin' ]; then
-    export $LC_ALL=C
+    export LC_ALL=C
 fi
 
 shared_secret="this will be used for the port knocking hash"
