@@ -73,6 +73,11 @@ void client(char *clnt_name, char *srvr_name, char *buf, size_t buflen)
     sleep(1);
     ip_flags(iph, 0);
 
+    #ifdef DEBUG
+    syslog(LOG_INFO, "sending from: %s", clnt_name);
+    syslog(LOG_INFO, "sending to:   %s", srvr_name);
+    #endif
+
     for (i = 0; i < buflen; i++)
     {
         char c = buf[i];
@@ -85,9 +90,13 @@ void client(char *clnt_name, char *srvr_name, char *buf, size_t buflen)
         send_encoded(sd, dgram, ntohs(iph->length), &din);
         iph->id = htons(initid + 0x10 * count++ + shalf + 1);
         send_encoded(sd, dgram, ntohs(iph->length), &din);
+        #ifdef DEBUG
         syslog(LOG_INFO, "%u datagrams sent", i);
+        #endif
     }
+    #ifdef DEBUG
     syslog(LOG_INFO, "all datagrams sent");
+    #endif
     close(sd);
 }
 
